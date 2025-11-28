@@ -170,9 +170,14 @@ static bool vm_do_claim_page(struct page *page)
 	return swap_in(page, frame->kva);
 }
 
+static uint64_t spt_hash_func(const struct hash_elem *e, void *aux);
+static bool spt_hash_less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux);
+
 /* Initialize new supplemental page table */
-void supplemental_page_table_init(struct supplemental_page_table *spt UNUSED)
+void supplemental_page_table_init(struct supplemental_page_table *spt)
 {
+	if (!hash_init(&spt->spt_hash, spt_hash_func, spt_hash_less_func, NULL))
+		PANIC("hash_init FAIL!");
 }
 
 /* Copy supplemental page table from src to dst */
@@ -186,4 +191,22 @@ void supplemental_page_table_kill(struct supplemental_page_table *spt UNUSED)
 {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
+}
+
+/* Computes and returns the hash value for hash element E, given
+ * auxiliary data AUX. */
+static uint64_t spt_hash_func(const struct hash_elem *e, void *aux)
+{
+	struct page *page = hash_entry(e, struct page, spt_hash_elem);
+	return hash_bytes(&page->va, sizeof(page->va));
+}
+
+/* Compares the value of two hash elements A and B, given
+ * auxiliary data AUX.  Returns true if A is less than B, or
+ * false if A is greater than or equal to B. */
+static bool spt_hash_less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux)
+{
+	struct page *a_page = hash_entry(a, struct page, spt_hash_elem);
+	struct page *b_page = hash_entry(b, struct page, spt_hash_elem);
+	return a_page->va < b_page->va;
 }
