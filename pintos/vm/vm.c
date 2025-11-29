@@ -195,13 +195,13 @@ void supplemental_page_table_kill(struct supplemental_page_table *spt UNUSED)
 	 * TODO: writeback all the modified contents to the storage. */
 }
 
-static uint64_t spt_hash_func(const struct hash_elem *e, void *aux)
+static uint64_t spt_hash_func(const struct hash_elem *e, void *aux UNUSED)
 {
 	struct page *page = hash_entry(e, struct page, spt_hash_elem);
 	return hash_bytes(&page->va, sizeof(page->va));
 }
 
-static bool spt_hash_less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux)
+static bool spt_hash_less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED)
 {
 	struct page *a_page = hash_entry(a, struct page, spt_hash_elem);
 	struct page *b_page = hash_entry(b, struct page, spt_hash_elem);
