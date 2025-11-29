@@ -174,6 +174,7 @@ static bool vm_do_claim_page(struct page *page)
 
 static uint64_t spt_hash_func(const struct hash_elem *e, void *aux);
 static bool spt_hash_less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux);
+static void spt_kill_action_func(struct hash_elem *e, void *aux UNUSED);
 
 /* Initialize new supplemental page table */
 void supplemental_page_table_init(struct supplemental_page_table *spt)
@@ -189,10 +190,9 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst UNUSED,
 }
 
 /* Free the resource hold by the supplemental page table */
-void supplemental_page_table_kill(struct supplemental_page_table *spt UNUSED)
+void supplemental_page_table_kill(struct supplemental_page_table *spt)
 {
-	/* TODO: Destroy all the supplemental_page_table hold by thread and
-	 * TODO: writeback all the modified contents to the storage. */
+	hash_destroy(spt, spt_kill_action_func);
 }
 
 static uint64_t spt_hash_func(const struct hash_elem *e, void *aux UNUSED)
@@ -201,9 +201,20 @@ static uint64_t spt_hash_func(const struct hash_elem *e, void *aux UNUSED)
 	return hash_bytes(&page->va, sizeof(page->va));
 }
 
-static bool spt_hash_less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux UNUSED)
+static bool spt_hash_less_func(const struct hash_elem *a, const struct hash_elem *b,
+							   void *aux UNUSED)
 {
 	struct page *a_page = hash_entry(a, struct page, spt_hash_elem);
 	struct page *b_page = hash_entry(b, struct page, spt_hash_elem);
 	return a_page->va < b_page->va;
+}
+
+static void spt_kill_action_func(struct hash_elem *e, void *aux UNUSED)
+{
+	struct page *page = hash_entry(e, struct page, spt_hash_elem);
+
+	if (page_get_type(page) == VM_FILE)
+		swap_out(page);
+
+	vm_dealloc_page(page);
 }
