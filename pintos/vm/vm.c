@@ -195,17 +195,12 @@ void supplemental_page_table_kill(struct supplemental_page_table *spt UNUSED)
 	 * TODO: writeback all the modified contents to the storage. */
 }
 
-/* Computes and returns the hash value for hash element E, given
- * auxiliary data AUX. */
 static uint64_t spt_hash_func(const struct hash_elem *e, void *aux)
 {
 	struct page *page = hash_entry(e, struct page, spt_hash_elem);
 	return hash_bytes(&page->va, sizeof(page->va));
 }
 
-/* Compares the value of two hash elements A and B, given
- * auxiliary data AUX.  Returns true if A is less than B, or
- * false if A is greater than or equal to B. */
 static bool spt_hash_less_func(const struct hash_elem *a, const struct hash_elem *b, void *aux)
 {
 	struct page *a_page = hash_entry(a, struct page, spt_hash_elem);
