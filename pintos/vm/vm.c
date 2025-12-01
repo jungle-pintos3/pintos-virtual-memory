@@ -75,13 +75,15 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void *upage, bool writabl
 
 	// page구조체에 값 넣기
 	uninit_new(page, upage, init, type, aux, initializer);
-
-	/* TODO: should modify the field after calling the uninit_new. */
+	page->writable = writable;
 
 	if (!spt_insert_page(spt, page))
 		goto err;
 
+	return true;
+
 err:
+	free(page);
 	return false;
 }
 
@@ -92,17 +94,17 @@ struct page *spt_find_page(struct supplemental_page_table *spt, void *va)
 		return NULL;
 
 	// 1. 페이지 경계로 va를 내린다
-	struct page page;
-	page.va = pg_round_down(va);
+	struct page dummy_page;
+	dummy_page.va = pg_round_down(va);
 
 	// 2. 해시 테이블에서 검색한다.
-	struct hash_elem *find_elem = hash_find(&spt->spt_hash, &page.spt_hash_elem);
+	struct hash_elem *find_elem = hash_find(&spt->spt_hash, &dummy_page.spt_hash_elem);
 
 	// 3. 찾았으면 page구조체를 반환한다.
-	if (find_elem != NULL)
-		return hash_entry(find_elem, struct page, spt_hash_elem);
+	if (find_elem == NULL)
+		return NULL;
 
-	return NULL;
+		return hash_entry(find_elem, struct page, spt_hash_elem);
 }
 
 // spt에 페이지 추가
@@ -110,7 +112,7 @@ bool spt_insert_page(struct supplemental_page_table *spt, struct page *page)
 {
 	if (spt == NULL || page == NULL)
 		return false;
-	return hash_insert(&spt->spt_hash, page) == NULL;
+	return hash_insert(&spt->spt_hash, &page->spt_hash_elem) == NULL;
 }
 
 void spt_remove_page(struct supplemental_page_table *spt, struct page *page)
