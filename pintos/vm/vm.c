@@ -1,6 +1,7 @@
 /* vm.c: Generic interface for virtual memory objects. */
 
 #include "threads/malloc.h"
+#include "threads/mmu.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
 #include "vaddr.h"
@@ -104,7 +105,7 @@ struct page *spt_find_page(struct supplemental_page_table *spt, void *va)
 	if (find_elem == NULL)
 		return NULL;
 
-		return hash_entry(find_elem, struct page, spt_hash_elem);
+	return hash_entry(find_elem, struct page, spt_hash_elem);
 }
 
 // spt에 페이지 추가
@@ -142,16 +143,24 @@ static struct frame *vm_evict_frame(void)
 	return NULL;
 }
 
-/* palloc() and get frame. If there is no available page, evict the page
- * and return it. This always return valid address. That is, if the user pool
- * memory is full, this function evicts the frame to get the available memory
- * space.*/
+/* palloc()으로 프레임을 획득한다. 사용가능한 페이지가 없으면 페이지를 제거한다.
+ * 이 함수는 항상 유효한 주소를 반환한다. 즉, 유저풀 메모리가 가득 차있으면
+ * 메모리 공간을 확보하기 위해 프레임을 제거한다. */
 static struct frame *vm_get_frame(void)
 {
-	struct frame *frame = NULL;
-	/* TODO: Fill this function. */
+	// frame 구조체를 생성한다
+	struct frame *frame = malloc(sizeof(*frame));
+	if (frame == NULL)
+		PANIC("(vm_get_frame)");
 
-	ASSERT(frame != NULL);
+	*frame = (struct frame){
+		.page = NULL,
+		.kva = palloc_get_page(PAL_USER | PAL_ZERO) // 사용자풀에서 물리 페이지 할당받는다
+	};
+
+	if (frame->kva == NULL)
+		PANIC("(vm_get_frame) TODO: swap out 미구현");
+
 	ASSERT(frame->page == NULL);
 	return frame;
 }
@@ -187,25 +196,36 @@ void vm_dealloc_page(struct page *page)
 }
 
 /* Claim the page that allocate on VA. */
-bool vm_claim_page(void *va UNUSED)
+bool vm_claim_page(void *va)
 {
-	struct page *page = NULL;
-	/* TODO: Fill this function */
+	if (va == NULL)
+		return false;
 
+	// 1. spt에서 페이지를 찾아서 page 구조체 획득
+	struct page *page = spt_find_page(&thread_current()->spt, va);
+	if (page == NULL)
+		return false;
+
+	// 2. 실제 프레임 할당
 	return vm_do_claim_page(page);
 }
 
-/* Claim the PAGE and set up the mmu. */
+// 물레프레임 할당하여 페이지와 프레임을 연결한다
 static bool vm_do_claim_page(struct page *page)
 {
+	// 1. 물리 프레임을 할당한다 (프레임에 의미있는 데이터는 없는 상태)
 	struct frame *frame = vm_get_frame();
 
-	/* Set links */
+	// 2. 페이지와 프레임을 서로 연결한다
 	frame->page = page;
 	page->frame = frame;
 
-	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	// 3. pte 생성
+	bool success = pml4_set_page(&thread_current()->pml4, page->va, frame->kva, page->writable);
+	if (!success)
+		return false;
 
+	// 4. 페이지 초기화 (uninit_initialize)
 	return swap_in(page, frame->kva);
 }
 
