@@ -2,9 +2,9 @@
 
 #include "threads/malloc.h"
 #include "threads/mmu.h"
+#include "threads/vaddr.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
-#include "vaddr.h"
 #include <string.h>
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
@@ -89,7 +89,7 @@ err:
 // spt에서 va로 페이지를 찾아 반환하는 함수
 struct page *spt_find_page(struct supplemental_page_table *spt, void *va)
 {
-	if (va == NULL)
+	if (va == NULL || hash_empty(&spt->spt_hash))
 		return NULL;
 
 	// 1. 페이지 경계로 va를 내린다
@@ -182,7 +182,7 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user, bool write
 	if (fault_page)
 		return vm_do_claim_page(fault_page);
 
-	//TODO:  스택 여부 판단 및 스택
+	// TODO:  스택 여부 판단 및 스택
 
 	return false;
 }
