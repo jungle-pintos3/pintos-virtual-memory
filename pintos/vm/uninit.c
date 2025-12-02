@@ -22,7 +22,7 @@ static const struct page_operations uninit_ops = {
 	.type = VM_UNINIT,
 };
 
-/* DO NOT MODIFY this function */
+// page_initializer을 설정하는 역할을 한다
 void uninit_new(struct page *page, void *va, vm_initializer *init, enum vm_type type, void *aux,
 				bool (*initializer)(struct page *, enum vm_type, void *))
 {
@@ -39,17 +39,27 @@ void uninit_new(struct page *page, void *va, vm_initializer *init, enum vm_type 
 						  }};
 }
 
-/* Initalize the page on first fault */
+// 페이지 폴트 발생시 페이지를 초기화하는 함수
 static bool uninit_initialize(struct page *page, void *kva)
 {
 	struct uninit_page *uninit = &page->uninit;
 
-	/* Fetch first, page_initialize may overwrite the values */
-	vm_initializer *init = uninit->init;
-	void *aux = uninit->aux;
+	// 1. 저장된 정보를 꺼낸다
+	vm_initializer *init = uninit->init; // lazy_load_segment
+	void *aux = uninit->aux;			 // vm_file_aux
+	enum vm_type type = uninit->type;
 
-	/* TODO: You may need to fix this function. */
-	return uninit->page_initializer(page, uninit->type, kva) && (init ? init(page, aux) : true);
+	// 2. 타입 변환	(uninit_new에서 설정해둔 Initializer가 실행된다)
+	bool success = uninit->page_initializer(page, type, kva);
+	if (!success)
+		return false;
+
+	// 3. 실제 데이터 로드 (lazy_load_segment 실행된다)
+	if (init) {
+		return init(page, aux);
+	}
+
+	return true;
 }
 
 /* Free the resources hold by uninit_page. Although most of pages are transmuted

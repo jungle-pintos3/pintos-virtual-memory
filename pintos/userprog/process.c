@@ -228,6 +228,11 @@ int process_exec(void *f_name)
 	/* We first kill the current context */
 	process_cleanup();
 
+// SPT 재초기화
+#ifdef VM
+	supplemental_page_table_init(&thread_current()->spt);
+#endif
+
 	/* And then load the binary */
 	success = load(file_name, argc, argv, &_if);
 
@@ -297,9 +302,9 @@ void process_exit(void)
 static void process_cleanup(void)
 {
 	struct thread *curr = thread_current();
-#ifdef VM
-	supplemental_page_table_kill(&curr->spt);
-#endif
+	// #ifdef VM
+	// 	supplemental_page_table_kill(&curr->spt);
+	// #endif
 
 	uint64_t *pml4;
 	/* Destroy the current process's page directory and switch back
@@ -480,7 +485,7 @@ static bool load(const char *file_name, int argc, char **argv, struct intr_frame
 		}
 	}
 
-	/* Set up stack. */
+	// 스택 초기화
 	if (!setup_stack(if_))
 		goto done;
 	build_user_stack(if_, argc, argv);
@@ -674,13 +679,16 @@ static bool install_page(void *upage, void *kpage, bool writable)
  * upper block. */
 
 static struct vm_file_aux {
-	struct file *file;
-	off_t ofs;
-	size_t page_read_bytes;
+	struct file *file;		// 읽을 파일
+	off_t ofs;				// 파일 오프셋
+	size_t page_read_bytes; // 읽을 바이트 수
 };
 
+// 페이지 폴트가 발생했을 때 실제로 파일에서 데이터를 읽어오는 함수
+// page: 초기화할 페이지
 static bool lazy_load_segment(struct page *page, void *aux)
 {
+	// 1. aux에서 정보 추출해서 file_page 구조체 초기화
 	struct vm_file_aux *vm_file_aux = (struct vm_file_aux *)aux;
 	struct file *file = vm_file_aux->file;
 	off_t ofs = vm_file_aux->ofs;
@@ -689,12 +697,14 @@ static bool lazy_load_segment(struct page *page, void *aux)
 	ASSERT((page_read_bytes + PGSIZE - page_read_bytes) % PGSIZE == 0);
 	ASSERT(ofs % PGSIZE == 0);
 
+	// 2. 파일에서 데이터 읽기
 	file_seek(file, ofs);
 	if (file_read(file, page->frame->kva, page_read_bytes) != (int)page_read_bytes) {
 		palloc_free_page(page->frame->kva);
 		return false;
 	}
-	
+
+	// 3. 나머지 부분 0으로 채우기
 	memset(page->frame->kva + page_read_bytes, 0, PGSIZE - page_read_bytes);
 
 	return true;
@@ -714,50 +724,87 @@ static bool lazy_load_segment(struct page *page, void *aux)
  *
  * Return true if successful, false if a memory allocation error
  * or disk read error occurs. */
+// ELF 파일의 세그먼트(.text, .data 등)를 가상 메모리에 매핑한다
+// 실제 데이터 로드 X, 페이지만 등록하는 함수
+// upage: 가상 메모리 시작 주소
 static bool load_segment(struct file *file, off_t ofs, uint8_t *upage, uint32_t read_bytes,
 						 uint32_t zero_bytes, bool writable)
 {
-	ASSERT((read_bytes + zero_bytes) % PGSIZE == 0);
-	ASSERT(pg_ofs(upage) == 0);
-	ASSERT(ofs % PGSIZE == 0);
+	ASSERT((read_bytes + zero_bytes) % PGSIZE == 0); // 페이지 단위 정렬
+	ASSERT(pg_ofs(upage) == 0);						 // upage는 페이지 경계
+	ASSERT(ofs % PGSIZE == 0);						 // 오프셋도 페이지 경계
 
+	// 모든 페이지에 대해 반복한다
 	while (read_bytes > 0 || zero_bytes > 0) {
-		/* Do calculate how to fill this page.
-		 * We will read PAGE_READ_BYTES bytes from FILE
-		 * and zero the final PAGE_ZERO_BYTES bytes. */
+		// 1. 현재 페이지에서 읽을/채울 바이트 계산
 		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-		/* TODO: Set up aux to pass information to the lazy_load_segment. */
+		// 2. aux 구조체 생성 (나중에 lazy_load_segment에 전달될 정보)
 		struct vm_file_aux *vm_file_aux = malloc(sizeof(*vm_file_aux));
 		*vm_file_aux = (struct vm_file_aux){
-			.file = file,
-			.ofs = ofs,
-			.page_read_bytes = page_read_bytes //
+			.file = file,					   // 어떤 파일에서
+			.ofs = ofs,						   // 어느 위치부터
+			.page_read_bytes = page_read_bytes // 얼마나 읽을지
 		};
-		if (!vm_alloc_page_with_initializer(VM_FILE, upage, writable, lazy_load_segment,
-											vm_file_aux))
-			return false;
 
-		/* Advance. */
+		printf("load_segment called....\n");
+		printf("upage ===> %p\n ", upage);
+
+		if (page_read_bytes > 0) { // 파일에 읽을 데이터가 있음 > VM_FILE 타입
+			// 3. VM_FILE타입의 uninit페이지 생성
+			if (!vm_alloc_page_with_initializer(VM_FILE,
+												upage,			   // 가상 주소
+												writable,		   // 쓰기 권한
+												lazy_load_segment, // 실제 로드할 함수
+												vm_file_aux		   // 파일 정보
+												))
+				return false;
+		} else { // 파일에 데이터 없음 > VM_ANON 타입	FIXME: 12/2 코어타임
+			if (!vm_alloc_page_with_initializer(VM_ANON,
+												upage,	  // 가상 주소
+												writable, // 쓰기 권한
+												NULL, NULL))
+				return false;
+		}
+
+		// 4. 다음 페이지로 진행
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
+		ofs += PGSIZE; // 파일 오프셋도 증가 FIXME: 12/2 코어타임
+
+		return true;
 	}
-	return true;
 }
 
-/* Create a PAGE of stack at the USER_STACK. Return true on success. */
+// 유저 스택 초기화 (VM_ANON), lazy loading 해당 안 됨
 static bool setup_stack(struct intr_frame *if_)
 {
-	bool success = false;
+	// 0. 스택 하단 주소 계산 (user_stack에서 한 페이지 아래임)
 	void *stack_bottom = (void *)(((uint8_t *)USER_STACK) - PGSIZE);
 
-	/* TODO: Map the stack on stack_bottom and claim the page immediately.
-	 * TODO: If success, set the rsp accordingly.
-	 * TODO: You should mark the page is stack. */
-	/* TODO: Your code goes here */
+	// 1. spt에 스택 페이지 등록
+	if (!vm_alloc_page(VM_ANON, stack_bottom, true))
+		return false;
 
-	return success;
+	// 2. 물리프레임 할당
+	if (!vm_claim_page(stack_bottom))
+		return false;
+
+	// 3. 스택포인터 설정
+	if_->rsp = USER_STACK;
+
+	// 4. 스택 페이지 표시
+	// page 구조체에 "이 페이지는 스택 페이지다"라고 표시해야 한다.
+	// 나중에 page fault handler에서
+	// 정상적인 스택 성장: 스택 페이지 근처에서 발생한 fault → 새 스택 페이지 할당
+	// 잘못된 메모리 접근: 일반 페이지에서 발생한 fault → 프로세스 종료
+	struct page *page = spt_find_page(&thread_current()->spt, stack_bottom);
+	if (page == NULL)
+		return false;
+	page->anon.is_stack = true;
+
+	return true;
 }
 #endif /* VM */

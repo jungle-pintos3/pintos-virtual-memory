@@ -5,7 +5,7 @@
 #include "hash.h"
 
 enum vm_type {
-	/* page not initialized */
+	// 모든 페이지는 처음에 이 타입으로 생성된다
 	VM_UNINIT = 0,
 	/* page not related to the file, aka anonymous page */
 	VM_ANON = 1,
@@ -35,7 +35,7 @@ enum vm_type {
 struct page_operations;
 struct thread;
 
-#define VM_TYPE(type) ((type) & 7)
+#define VM_TYPE(type) ((type)&7)
 
 /* The representation of "page".
  * This is kind of "parent class", which has four "child class"es, which are

@@ -102,17 +102,16 @@ static void kill(struct intr_frame *f)
 	}
 }
 
-/* Page fault handler.  This is a skeleton that must be filled in
-	 to implement virtual memory.  Some solutions to project 2 may
-	 also require modifying this code.
+/* 페이지 폴트 핸들러.
+가상 메모리를 구현하기 위한 주석용 뼈대 코드이다.
+프로젝트 2의 일부 해법에서는 이 코드 수정이 필요할 수 있다.
 
-	 At entry, the address that faulted is in CR2 (Control Register
-	 2) and information about the fault, formatted as described in
-	 the PF_* macros in exception.h, is in F's error_code member.  The
-	 example code here shows how to parse that information.  You
-	 can find more information about both of these in the
-	 description of "Interrupt 14--Page Fault Exception (#PF)" in
-	 [IA32-v3a] section 5.15 "Exception and Interrupt Reference". */
+예외 진입 시, 폴트가 발생한 주소는 CR2(제어 레지스터 2)에 저장된다.
+폴트 정보는 exception.h에 정의된 PF_* 매크로 형식으로 F의 error_code 멤버에 담긴다.
+아래 예제 코드는 이 정보를 어떻게 해석하는지 보여준다.
+
+자세한 내용은 [IA32-v3a] 문서의 5.15절 Exception and Interrupt Reference﻿ 중
+Interrupt 14 — Page Fault Exception (#PF)﻿ 항목을 참고하면 된다. */
 static void page_fault(struct intr_frame *f)
 {
 	bool not_present; /* True: not-present page, false: writing r/o page. */

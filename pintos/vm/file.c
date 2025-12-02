@@ -19,13 +19,15 @@ void vm_file_init(void)
 {
 }
 
-/* Initialize the file backed page */
 bool file_backed_initializer(struct page *page, enum vm_type type, void *kva)
 {
-	/* Set up the handler */
+	if (page == NULL || type != VM_FILE)
+		return false;
+
+	// 1. type에 맞게 operation 변경
 	page->operations = &file_ops;
 
-	struct file_page *file_page = &page->file;
+	return true;
 }
 
 /* Swap in the page by read contents from the file. */

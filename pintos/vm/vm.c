@@ -4,7 +4,7 @@
 #include "threads/mmu.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
-#include "vaddr.h"
+#include "include/threads/vaddr.h"
 #include <string.h>
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
@@ -91,19 +91,22 @@ err:
 // spt에서 va로 페이지를 찾아 반환하는 함수
 struct page *spt_find_page(struct supplemental_page_table *spt, void *va)
 {
-	if (va == NULL)
+	if (va == NULL || spt == NULL || hash_empty(spt))
 		return NULL;
 
 	// 1. 페이지 경계로 va를 내린다
 	struct page dummy_page;
+	memset(&dummy_page, 0, sizeof(struct page));
 	dummy_page.va = pg_round_down(va);
 
 	// 2. 해시 테이블에서 검색한다.
 	struct hash_elem *find_elem = hash_find(&spt->spt_hash, &dummy_page.spt_hash_elem);
 
 	// 3. 찾았으면 page구조체를 반환한다.
-	if (find_elem == NULL)
+	if (find_elem == NULL) {
+		printf("spt_find_page called. find_elem == NULL \n");
 		return NULL;
+	}
 
 	return hash_entry(find_elem, struct page, spt_hash_elem);
 }
@@ -176,14 +179,32 @@ static bool vm_handle_wp(struct page *page UNUSED)
 }
 
 /* Return true on success */
-bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED, bool user UNUSED,
-						 bool write UNUSED, bool not_present UNUSED)
+bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user, bool write, bool not_present)
 {
-	struct supplemental_page_table *spt UNUSED = &thread_current()->spt;
+	struct supplemental_page_table *spt = &thread_current()->spt;
 	struct page *page = NULL;
-	/* TODO: Validate the fault */
-	/* TODO: Your code goes here */
 
+	// 1. 유효성
+	if (spt == NULL || addr == NULL)
+		return false;
+
+	if (user && is_kernel_vaddr(addr))
+		return false;
+
+	// 2. spt에 있는지 찾기
+	page = spt_find_page(spt, addr);
+	if (page == NULL) {
+		printf("vm_try_handle_fault called. page == NULL \n");
+		printf("fault addr = %p\n", addr);
+		printf("rounded addr = %p\n", pg_round_down(addr));
+		return false; // TODO: 스택 성장인지 확인 필요
+	}
+
+	// 3. write 시도라면 권한 검사
+	if (write && !page->writable)
+		return false;
+
+	// 4. 물리 메모리 할당
 	return vm_do_claim_page(page);
 }
 
@@ -221,7 +242,7 @@ static bool vm_do_claim_page(struct page *page)
 	page->frame = frame;
 
 	// 3. pte 생성
-	bool success = pml4_set_page(&thread_current()->pml4, page->va, frame->kva, page->writable);
+	bool success = pml4_set_page(thread_current()->pml4, page->va, frame->kva, page->writable);
 	if (!success)
 		return false;
 
@@ -230,7 +251,6 @@ static bool vm_do_claim_page(struct page *page)
 }
 
 // spt helpers
-static uint64_t spt_hash_func(const struct hash_elem *elem, void *aux UNUSED);
 static uint64_t spt_hash_func(const struct hash_elem *elem, void *aux UNUSED);
 static bool spt_hash_less_func(const struct hash_elem *elem_a, const struct hash_elem *elem_b,
 							   void *aux UNUSED);
@@ -283,13 +303,13 @@ static uint64_t spt_hash_func(const struct hash_elem *elem, void *aux UNUSED)
 }
 
 /* page가 같은지, 혹은 순서가 앞서는지를 va를 기준으로 판단하는 함수
- * a가 b보다 더 크면 true를 반환한다. */
+ * a가 b보다 더 작으면 true를 반환한다. */
 static bool spt_hash_less_func(const struct hash_elem *elem_a, const struct hash_elem *elem_b,
 							   void *aux UNUSED)
 {
 	struct page *page_a = hash_entry(elem_a, struct page, spt_hash_elem);
 	struct page *page_b = hash_entry(elem_b, struct page, spt_hash_elem);
-	return page_a->va > page_b->va;
+	return page_a->va < page_b->va;
 }
 
 // spt에서 해당 page를 삭제합니다

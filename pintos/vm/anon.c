@@ -3,6 +3,9 @@
 #include "vm/vm.h"
 #include "devices/disk.h"
 
+#define PGBITS 12
+#define PGSIZE (1 << PGBITS) /* Bytes in a page. */
+
 /* DO NOT MODIFY BELOW LINE */
 static struct disk *swap_disk;
 static bool anon_swap_in(struct page *page, void *kva);
@@ -27,10 +30,16 @@ void vm_anon_init(void)
 /* Initialize the file mapping */
 bool anon_initializer(struct page *page, enum vm_type type, void *kva)
 {
-	/* Set up the handler */
+	// 1. type에 맞게 operation 변경
 	page->operations = &anon_ops;
 
+	// 2. 초기화
 	struct anon_page *anon_page = &page->anon;
+
+	// 3. 메모리를 0으로 초기화
+	memset(kva, 0, PGSIZE);
+
+	return true;
 }
 
 /* Swap in the page by read contents from the swap disk. */
