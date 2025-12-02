@@ -298,7 +298,7 @@ static void process_cleanup(void)
 {
 	struct thread *curr = thread_current();
 #ifdef VM
-	supplemental_page_table_kill(&curr->spt);
+	// supplemental_page_table_kill(&curr->spt);
 #endif
 
 	uint64_t *pml4;
@@ -694,7 +694,7 @@ static bool lazy_load_segment(struct page *page, void *aux)
 		palloc_free_page(page->frame->kva);
 		return false;
 	}
-	
+
 	memset(page->frame->kva + page_read_bytes, 0, PGSIZE - page_read_bytes);
 
 	return true;
@@ -742,6 +742,7 @@ static bool load_segment(struct file *file, off_t ofs, uint8_t *upage, uint32_t 
 		/* Advance. */
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
+		ofs += page_read_bytes;
 		upage += PGSIZE;
 	}
 	return true;
