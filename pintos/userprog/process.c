@@ -187,6 +187,8 @@ static void __do_fork(void *aux)
 		goto error;
 #endif
 	process_init();
+	if (current->current_file)
+		current->current_file = file_duplicate(parent->current_file);
 	succ = copy_fd_table(current->fd_table, parent->fd_table);
 
 	/* Finally, switch to the newly created process. */
