@@ -319,10 +319,10 @@ static void copy_page_from_spt(struct hash_elem *elem, void *aux)
 		case VM_UNINIT:
 			enum vm_type type = page_get_type(src_page);
 			size_t aux_size = type == VM_FILE ? sizeof(struct file_page) : sizeof(struct anon_page);
-			void *aux_temp = malloc(aux_size);
-			memcpy(aux_temp, src_page->uninit.aux, aux_size);
+			void *dst_aux = malloc(aux_size);
+			memcpy(dst_aux, src_page->uninit.aux, aux_size);
 			vm_alloc_page_with_initializer(type, src_page->va, src_page->writable,
-										   src_page->uninit.init, aux_temp);
+										   src_page->uninit.init, dst_aux);
 			return;
 		case VM_FILE:
 			vm_alloc_page_with_initializer(VM_FILE, src_page->va, src_page->writable, NULL,
