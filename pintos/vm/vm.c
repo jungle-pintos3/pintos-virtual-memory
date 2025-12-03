@@ -271,9 +271,13 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst,
 	// 2.src 순회 중 dst 참조를 위해 aux에 dst 할당
 	src->spt_hash.aux = dst;
 
+	printf("[DEBUG SPT] Parent SPT has %zu pages\n", hash_size(&src->spt_hash));
+
 	// 3. 순회를 하며 copy_page_from_spt 호출
 	hash_apply(&src->spt_hash, copy_page_from_spt);
 	src->spt_hash.aux = NULL;
+
+	printf("[DEBUG SPT] Child SPT now has %zu pages\n", hash_size(&dst->spt_hash));
 
 	return true;
 }
@@ -336,6 +340,9 @@ static void copy_page_from_spt(struct hash_elem *elem, void *aux)
 	void *va = page->va;
 	bool writable = page->writable;
 
+	printf("[DEBUG COPY] Page: va=%p, type=%d, frame=%p\n",
+	       va, page->operations->type, page->frame);
+
 	// 부모 페이지를 읽을때 크래쉬 방지위해 타입별로 분기
 	if (page->operations->type == VM_UNINIT) {
 		vm_initializer *init = page->uninit.init;
@@ -377,27 +384,44 @@ static void copy_page_from_spt(struct hash_elem *elem, void *aux)
 		}
 	} else if (page->operations->type == VM_ANON) { // 메모리에만 있는 데이터
 		// ANON은 init/aux 모두 NULL
+		printf("[DEBUG ANON] Copying ANON page: va=%p, parent_frame=%p, writable=%d\n",
+		       va, page->frame, writable);
 
 		// 1. 자식에 UNINIT 페이지 생성
 		if (!vm_alloc_page(VM_ANON, va, writable)) {
+			printf("[DEBUG ANON] vm_alloc_page failed for va=%p\n", va);
 			return;
 		}
 
 		// 2. 자식 페이지 찾기
 		struct page *child_page = spt_find_page(dst_spt, va);
-		if (child_page == NULL)
+		if (child_page == NULL) {
+			printf("[DEBUG ANON] child_page not found in SPT for va=%p\n", va);
 			return;
+		}
 
 		// 3. 프레임 즉시 할당
-		if (!vm_do_claim_page(child_page))
+		if (!vm_do_claim_page(child_page)) {
+			printf("[DEBUG ANON] vm_do_claim_page failed for va=%p\n", va);
 			return;
+		}
+
+		printf("[DEBUG ANON] Child page claimed: va=%p, child_frame=%p\n",
+		       va, child_page->frame);
 
 		// 4. 부모의 물리 메모리 내용 복사
 		if (page->frame != NULL) {
 			memcpy(child_page->frame->kva, page->frame->kva, PGSIZE);
+			printf("[DEBUG ANON] Copied %d bytes from parent to child at va=%p\n",
+			       PGSIZE, va);
 		} else {
 			// 부모도 물리 메모리가 없으면 0으로 초기화 한다
 			memset(child_page->frame->kva, 0, PGSIZE);
+			printf("[DEBUG ANON] Parent frame NULL, zeroed child page at va=%p\n", va);
 		}
+
+		// 5. PML4 매핑 확인
+		void *child_kva = pml4_get_page(thread_current()->pml4, va);
+		printf("[DEBUG ANON] PML4 check: va=%p mapped to kva=%p\n", va, child_kva);
 	}
 }

@@ -180,8 +180,10 @@ static void __do_fork(void *aux)
 	process_activate(current);
 #ifdef VM
 	supplemental_page_table_init(&current->spt);
+	printf("[DEBUG FORK] Parent: %s, Child: %s, copying SPT...\n", parent->name, current->name);
 	if (!supplemental_page_table_copy(&current->spt, &parent->spt))
 		goto error;
+	printf("[DEBUG FORK] SPT copy completed for child: %s\n", current->name);
 #else
 	if (!pml4_for_each(parent->pml4, duplicate_pte, parent))
 		goto error;
