@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <syscall-nr.h>
+#include <string.h>
 
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -130,14 +131,14 @@ static void syscall_exit(int status)
 
 static pid_t syscall_fork(const char *thread_name, struct intr_frame *if_)
 {
-	if (thread_name == NULL || !valid_address(thread_name, false))
+	if (thread_name == NULL || !check_buffer(thread_name, strlen(thread_name), false))
 		syscall_exit(-1);
 	return process_fork(thread_name, if_);
 }
 
 static int syscall_exec(const char *cmd_line)
 {
-	if (cmd_line == NULL || !valid_address(cmd_line, false))
+	if (cmd_line == NULL || !check_buffer(cmd_line, strlen(cmd_line), false))
 		syscall_exit(-1);
 	char *copy_cmd_line = palloc_get_page(0);
 	if (copy_cmd_line == NULL)
@@ -155,7 +156,7 @@ static int syscall_wait(int pid)
 
 static bool syscall_create(const char *file, unsigned initial_size)
 {
-	if (!valid_address(file, false))
+	if (!check_buffer(file, strlen(file), false))
 		syscall_exit(-1);
 
 	lock_acquire(&file_lock);
@@ -167,7 +168,7 @@ static bool syscall_create(const char *file, unsigned initial_size)
 
 static bool syscall_remove(const char *file)
 {
-	if (!valid_address(file, false))
+	if (!check_buffer(file, strlen(file), false))
 		syscall_exit(-1);
 
 	lock_acquire(&file_lock);
@@ -179,7 +180,7 @@ static bool syscall_remove(const char *file)
 
 static int syscall_open(const char *file)
 {
-	if (!valid_address(file, false))
+	if (!check_buffer(file, strlen(file), false))
 		syscall_exit(-1);
 
 	lock_acquire(&file_lock);
@@ -215,21 +216,21 @@ static int syscall_read(int fd, void *buffer, unsigned size)
 	int result;
 	if (size == 0)
 		return 0;
-	if (!valid_address(buffer, true))
+	if (!check_buffer(buffer, size, false))
 		syscall_exit(-1);
 
 	struct file *file = get_file(thread_current()->fd_table, fd);
 	if (file == NULL || file == stdout_entry)
 		return -1;
 
-	lock_acquire(&file_lock);
 	if (file == stdin_entry) {
 		for (int i = 0; i < size; i++)
 			((char *)buffer)[i] = input_getc();
-		result = size;
-	} else {
-		result = file_read(file, buffer, size);
+		return size;
 	}
+
+	lock_acquire(&file_lock);
+	result = file_read(file, buffer, size);
 	lock_release(&file_lock);
 
 	return result;
@@ -238,7 +239,7 @@ static int syscall_read(int fd, void *buffer, unsigned size)
 static int syscall_write(int fd, const void *buffer, unsigned size)
 {
 	int result;
-	if (!valid_address(buffer, false))
+	if (!check_buffer(buffer, size, true))
 		syscall_exit(-1);
 
 	struct file *file = get_file(thread_current()->fd_table, fd);
@@ -246,14 +247,14 @@ static int syscall_write(int fd, const void *buffer, unsigned size)
 	if (file == NULL || file == stdin_entry)
 		return -1;
 
-	lock_acquire(&file_lock);
 	if (file == stdout_entry) {
 		putbuf(buffer, size);
 		result = size;
 	} else {
+		lock_acquire(&file_lock);
 		result = file_write(file, buffer, size);
+		lock_release(&file_lock);
 	}
-	lock_release(&file_lock);
 
 	return result;
 }

@@ -6,7 +6,38 @@
 static int64_t get_user(const uint8_t *uaddr);
 static int64_t put_user(uint8_t *udst, uint8_t byte);
 
+bool check_buffer(const void *uaddr, size_t size, bool write)
+{
+	void *start = pg_round_down(uaddr);
+	void *end = pg_round_down(uaddr + size - 1);
+
+	for (void *p = start; p <= end; p += PGSIZE) {
+		if (!valid_address(p, write)) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
 bool valid_address(const void *uaddr, bool write)
+{
+	if (uaddr == NULL || !is_user_vaddr(uaddr))
+		return false;
+
+	int result = get_user(uaddr);
+	if (result == -1)
+		return false;
+
+	if (write) {
+		if (put_user(uaddr, (uint8_t)result) == -1)
+			return false;
+	}
+
+	return true;
+}
+
+bool valid_address_test(const void *uaddr, bool write)
 {
 	if (uaddr == NULL || !is_user_vaddr(uaddr))
 		return false;

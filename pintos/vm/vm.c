@@ -323,8 +323,20 @@ static void copy_page_from_spt(struct hash_elem *elem, void *aux)
 	struct page *src_page = hash_entry(elem, struct page, spt_hash_elem);
 
 	if (VM_TYPE(src_page->operations->type) == VM_UNINIT) {
+		struct file_page *src_aux = (struct file_page *)src_page->uninit.aux;
+
+		struct file_page *file_page_aux = (struct file_page *)malloc(sizeof(*file_page_aux));
+		if (!file_page_aux)
+			return false;
+
+		*file_page_aux = (struct file_page){
+			.file = file_reopen(src_aux->file),
+			.offset = src_aux->offset,
+			.page_read_bytes = src_aux->page_read_bytes,
+		};
+
 		vm_alloc_page_with_initializer(page_get_type(src_page), src_page->va, src_page->writable,
-									   src_page->uninit.init, src_page->uninit.aux);
+									   src_page->uninit.init, file_page_aux);
 		return;
 	}
 
@@ -334,22 +346,22 @@ static void copy_page_from_spt(struct hash_elem *elem, void *aux)
 			return false;
 
 		*file_page_aux = (struct file_page){
-			.file = src_page->file.file,
+			.file = file_reopen(src_page->file.file),
 			.offset = src_page->file.offset,
 			.page_read_bytes = src_page->file.page_read_bytes,
 		};
 
 		vm_alloc_page_with_initializer(page_get_type(src_page), src_page->va, src_page->writable,
 									   NULL, file_page_aux);
-	}
-
-	if (VM_TYPE(src_page->operations->type) == VM_ANON) {
-		vm_alloc_page(VM_TYPE(src_page->operations->type), src_page->va, src_page->writable);
+	} else if (VM_TYPE(src_page->operations->type) == VM_ANON) {
+		vm_alloc_page(page_get_type(src_page), src_page->va, src_page->writable);
 	}
 
 	struct page *dst_page = spt_find_page(dst_spt, src_page->va);
 	if (dst_page) {
 		vm_do_claim_page(dst_page);
 		memcpy(dst_page->frame->kva, src_page->frame->kva, PGSIZE);
+		// printf("memcpy done from %p to %p , type is %d\n", src_page->frame->kva,
+		// 	   dst_page->frame->kva, VM_TYPE(src_page->operations->type));
 	}
 }

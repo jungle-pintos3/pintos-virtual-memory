@@ -684,8 +684,12 @@ static bool lazy_load_segment(struct page *page, void *aux)
 
 	ASSERT((page_read_bytes + PGSIZE - page_read_bytes) % PGSIZE == 0);
 
-	if (file_read_at(file, page->frame->kva, page_read_bytes, ofs) != (int)page_read_bytes) {
-		palloc_free_page(page->frame->kva);
+	lock_acquire(&file_lock);
+	int read_result = file_read_at(file, page->frame->kva, page_read_bytes, ofs);
+	lock_release(&file_lock);
+
+	if (read_result != (int)page_read_bytes) {
+		// palloc_free_page(page->frame->kva);
 		return false;
 	}
 
