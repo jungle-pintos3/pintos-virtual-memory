@@ -313,15 +313,73 @@ static void remove_page_from_spt(struct hash_elem *elem, void *aux UNUSED)
 	vm_dealloc_page(curr_page);
 }
 
-// spt의 해당 page를 다른 spt로 복사합니다
+// spt의 하나의 page를 다른 spt로 복사합니다
 static void copy_page_from_spt(struct hash_elem *elem, void *aux)
 {
-	// TODO 구조 수정
 	struct supplemental_page_table *dst_spt = aux;
-
 	struct page *src_page = hash_entry(elem, struct page, spt_hash_elem);
-	struct page *dst_page = malloc(sizeof(struct page));
-	memcpy(dst_page, src_page, sizeof(struct page));
 
-	hash_insert(&dst_spt->spt_hash, dst_page);
+	// 복사 dst 페이지 할당 및 기본값으로 얕은 복사
+	struct page *dst_page = malloc(sizeof(struct page));
+	if (dst_page == NULL)
+		PANIC("copy_page_from_spt: malloc failed");
+	memcpy(dst_page, src_page,
+		   sizeof(struct page)); // 포인터 복사는 하면 안될 것 같은데.. 어떻게 하지?
+
+	// 공유하면 안되는 리소스는 초기화
+	dst_page->frame = NULL;
+
+	// 현재 타입별 깊은 복사
+	enum vm_type type = page_get_type(src_page);
+	switch (VM_TYPE(type)) {
+		case VM_UNINIT: {
+			// 최종 타입 확인
+			enum vm_type actual_type = VM_TYPE(src_page->uninit.type);
+
+			// 최종타입이 FILE이면 추후 파일 타입 변환시 필요한 File 정보를 aux에 가지고 있는다
+			if (actual_type == VM_FILE && src_page->uninit.aux != NULL) {
+				struct file_page *src_aux = src_page->uninit.aux;
+				struct file_page *dst_aux = malloc(sizeof(struct file_page));
+
+				if (NULL == dst_aux)
+					PANIC("copy_page_from_spt: aux malloc failed.");
+
+				// struct 복사
+				*dst_aux = *src_aux; // 파일 포인터도 복사됨
+				dst_page->uninit.aux = dst_aux;
+
+				dst_aux->file = file_duplicate(src_aux->file);
+				if (NULL == dst_aux->file)
+					PANIC("copy_page_from_spt: file dupliate failed in uninit.");
+				dst_page->uninit.aux = dst_aux;
+			}
+			// ANON타입 uninit은 aux가 NULL이니까 스킵.
+			break;
+		}
+
+		case VM_ANON: {
+			dst_page->anon.swap_slot = -1; // 스왑상태는 상속하지 않음
+			break;
+		}
+
+		case VM_FILE:
+			if (NULL != src_page->frame) {
+				// TODO: 부모의 메모리 내용을 원본 파일에 write-back
+
+				// 자식용 파일 객체 만들기 (같은 inode)
+				struct file *child_file = file_duplicate(src_page->file.file);
+				if (NULL == child_file)
+					PANIC("copy_page_from_spt: file duplicate failed.");
+
+				// 자식 페이지의 file 포인터를 복사본으로 변경
+				dst_page->file.file = child_file;
+			}
+
+			break;
+
+		default:
+			break;
+	}
+
+	hash_insert(&dst_spt->spt_hash, &dst_page->spt_hash_elem);
 }

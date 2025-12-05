@@ -90,18 +90,10 @@ static bool file_backed_swap_out(struct page *page)
 
 	// 2. dirty하면 처리
 	if (is_dirty) {
-		// writable인 경우 (mmap): 원본 파일에 write back
-		if (page->writable) {
-			lock_acquire(&file_lock);
-			file_write_at(file_page->file, page->frame->kva, file_page->page_read_bytes,
-						  file_page->offset);
-			lock_release(&file_lock);
-		}
-		// read-only인 경우 (실행파일 code, data, rodata): swap disk에 써야 함
-		else {
-			// TODO: swap disk에 쓰기
-			// 실행파일은 수정되면 안 되니까, dirty가 발생한 경우 swap disk로
-		}
+		// writable && mmap 파일 → 원본 파일에 write back
+		// writable && 실행 파일 (data, bss)→ swap disk에 써야 함!
+		// read-only (text, rodata)→ 원본 있으니까 그냥 버림
+
 		// dirty 비트를 clean으로 설정
 		pml4_set_dirty(thread_current()->pml4, page->va, false);
 	}
@@ -116,6 +108,7 @@ static bool file_backed_swap_out(struct page *page)
 static void file_backed_destroy(struct page *page)
 {
 	struct file_page *file_page UNUSED = &page->file;
+	// 1. 파일 aux를 free하고 null로 초기화.
 }
 
 /* Do the mmap */
