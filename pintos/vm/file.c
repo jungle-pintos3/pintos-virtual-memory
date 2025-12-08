@@ -69,6 +69,9 @@ static void file_backed_destroy(struct page *page)
 	if (pml4_is_dirty(thread_current()->pml4, page->va))
 		file_backed_swap_out(page);
 
+	if (file_page->file)
+		file_close(file_page->file);
+
 	if (page->frame != NULL) {
 		// pte에서 매핑 제거
 		pml4_clear_page(thread_current()->pml4, page->va);
@@ -94,7 +97,6 @@ munmap을 위해서 struct page에 다음 페이지를 가리키는 포인터인
 /* Do the mmap */
 void *do_mmap(void *addr, size_t length, int writable, struct file *file, off_t offset)
 {
-	file = file_reopen(file);
 	int index = 0;
 	void *addr_copy = addr;
 	size_t read_bytes = length;
@@ -108,7 +110,7 @@ void *do_mmap(void *addr, size_t length, int writable, struct file *file, off_t 
 			return NULL;
 
 		*mmap_aux = (struct mmap_aux){
-			.file = file,
+			.file = file_reopen(file),
 			.offset = offset,
 			.page_read_bytes = page_read_bytes,
 			.index = index++,						  // mmap 중에 몇번재
@@ -174,5 +176,4 @@ void do_munmap(void *addr)
 		struct page *page = spt_find_page(&thread_current()->spt, addr + (PGSIZE * i));
 		spt_remove_page(&thread_current()->spt, page);
 	}
-	file_close(mmap_page->file.file);
 }

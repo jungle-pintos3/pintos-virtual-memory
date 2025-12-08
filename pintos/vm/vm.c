@@ -330,10 +330,6 @@ static bool spt_hash_less_func(const struct hash_elem *elem_a, const struct hash
 static void remove_page_from_spt(struct hash_elem *elem, void *aux UNUSED)
 {
 	struct page *curr_page = hash_entry(elem, struct page, spt_hash_elem);
-
-	// if (page_get_type(curr_page) == VM_FILE) // NOTE
-	// 	swap_out(curr_page);
-
 	vm_dealloc_page(curr_page);
 }
 
