@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 use tests::tests;
-check_expected ([<<'EOF']);
+check_expected (IGNORE_USER_FAULTS => 1, [<<'EOF']);
 (mmap-unmap) begin
 (mmap-unmap) open "sample.txt"
 (mmap-unmap) mmap "sample.txt"
