@@ -77,6 +77,7 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void *upage, bool writabl
 	// page 구조체에 값 넣기
 	uninit_new(page, upage, init, type, aux, initializer);
 	page->writable = writable;
+	page->next_page = NULL;
 
 	if (!spt_insert_page(spt, page))
 		goto err;
@@ -120,6 +121,10 @@ void spt_remove_page(struct supplemental_page_table *spt, struct page *page)
 {
 	if (spt == NULL || page == NULL)
 		return false;
+
+	if (VM_TYPE(page->operations->type) == VM_FILE)
+		swap_out(page);
+
 	hash_delete(&spt->spt_hash, &page->spt_hash_elem);
 	vm_dealloc_page(page);
 }
@@ -155,7 +160,7 @@ static struct frame *vm_get_frame(void)
 
 	*frame = (struct frame){
 		.page = NULL,
-		.kva = palloc_get_page(PAL_USER | PAL_ZERO) // 사용자풀에서 물리 페이지 할당받는다
+		.kva = palloc_get_page(PAL_USER | PAL_ZERO) // 사용자 풀에서 물리 페이지 할당받는다
 	};
 
 	if (frame->kva == NULL)
@@ -192,15 +197,17 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user, bool write
 	if (spt == NULL || addr < VM_BOTTOM || is_kernel_vaddr(addr))
 		return false;
 
+	// printf("fault addr: %p\n", addr);
+
 	// 2. spt에 있는지 찾기
 	struct page *page = spt_find_page(spt, addr);
 
 	// Case 1: spt에 페이지가 있는 경우 (lazy loading, swap in)
 	if (page != NULL) {
 
-		// 페이지가 물리 메모리에 있는 경우 -> write protection fault
+		// R/O인 페이지에 쓰기 작업을 실시하는 경우 -> 유저 프로그램 exit
 		if (write && !page->writable)
-			return false; // 쓰기 불가능한 페이지에 쓰기 시도
+			thread_exit();
 
 		// 페이지가 물리 메모리에 없는 경우 -> 프레임 할당 및 로드
 		if (not_present)
@@ -214,9 +221,9 @@ bool vm_try_handle_fault(struct intr_frame *f, void *addr, bool user, bool write
 	if (page == NULL && not_present) {
 		void *rsp = user ? f->rsp : thread_current()->user_rsp;
 
-		// stack growth 조건 검사
+		// stack growth가 아닌 경우 -> segmentation fault
 		if (USER_STACK - (1 << 20) > addr || addr >= USER_STACK || addr < rsp - 8)
-			return false;
+			thread_exit();
 
 		return vm_stack_growth(addr);
 	}
@@ -333,9 +340,8 @@ static void remove_page_from_spt(struct hash_elem *elem, void *aux UNUSED)
 {
 	struct page *curr_page = hash_entry(elem, struct page, spt_hash_elem);
 
-	// if (page_get_type(curr_page) == VM_FILE) // NOTE
-	// 	swap_out(curr_page);
-
+	if (VM_TYPE(curr_page->operations->type) == VM_FILE)
+		swap_out(curr_page);
 	vm_dealloc_page(curr_page);
 }
 

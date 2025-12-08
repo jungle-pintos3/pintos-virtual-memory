@@ -49,6 +49,7 @@ struct page {
 	/* Your implementation */
 	struct hash_elem spt_hash_elem;
 	bool writable;
+	struct page *next_page; /* mmap으로 할당하는 경우, 다음 페이지를 가리키는 포인터 */
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */

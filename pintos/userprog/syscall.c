@@ -337,12 +337,26 @@ static int syscall_dup2(int oldfd, int newfd)
 
 static void *syscall_mmap(void *addr, size_t length, int writable, int fd, off_t offset)
 {
-	if (addr == NULL || is_kernel_vaddr(addr) || pg_ofs(addr) != 0 || length == 0)
+	if (addr == NULL || is_kernel_vaddr(addr) || pg_ofs(addr) != 0)
 		return NULL;
 
-	/* 이거 length > PGSIZE이면, 페이지별로 순회 돌아서 page 등록되어 있는지 확인하기 */
-	if (spt_find_page(&thread_current()->spt, addr) != NULL)
+	if (length == 0 || offset < 0 || offset % PGSIZE != 0)
 		return NULL;
+
+	size_t read_bytes = length;
+	void *tmp_addr = addr;
+
+	while (read_bytes > 0) {
+		size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+		if (spt_find_page(&thread_current()->spt, tmp_addr != NULL))
+			return NULL;
+
+		if (is_kernel_vaddr(tmp_addr))
+			return NULL;
+
+		tmp_addr += PGSIZE;
+		read_bytes -= page_read_bytes;
+	}
 
 	struct file *file = get_file(thread_current()->fd_table, fd);
 	if (file == NULL || file == stdout_entry || file == stdin_entry || file_length(file) == 0)
@@ -358,5 +372,13 @@ static void syscall_munmap(void *addr)
 	2. page spt에 등록되어 있는지 확인 -> 등록 안 되어 있으면 그냥 return
 	3. 등록되어 있으면 do_munmap()
 	*/
+
+	if (addr == NULL || is_kernel_vaddr(addr) || pg_ofs(addr) != 0)
+		return;
+
+	if (spt_find_page(&thread_current()->spt, addr) == NULL) {
+		return;
+	}
+
 	return do_munmap(addr);
 }
