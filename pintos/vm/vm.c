@@ -9,6 +9,9 @@
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
+
+struct list frame_list;
+
 void vm_init(void)
 {
 	vm_anon_init();
@@ -18,7 +21,7 @@ void vm_init(void)
 #endif
 	register_inspect_intr();
 	/* DO NOT MODIFY UPPER LINES. */
-	/* TODO: Your code goes here. */
+	list_init(&frame_list);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -127,9 +130,7 @@ void spt_remove_page(struct supplemental_page_table *spt, struct page *page)
 /* Get the struct frame, that will be evicted. */
 static struct frame *vm_get_victim(void)
 {
-	struct frame *victim = NULL;
-	/* TODO: The policy for eviction is up to you. */
-
+	struct frame *victim = list_pop_front(&frame_list);
 	return victim;
 }
 
@@ -137,10 +138,9 @@ static struct frame *vm_get_victim(void)
  * Return NULL on error.*/
 static struct frame *vm_evict_frame(void)
 {
-	struct frame *victim UNUSED = vm_get_victim();
-	/* TODO: swap out the victim and return the evicted frame. */
-
-	return NULL;
+	struct frame *victim = vm_get_victim();
+	swap_out(victim->page);
+	return victim;
 }
 
 /* palloc()으로 프레임을 획득한다. 사용가능한 페이지가 없으면 페이지를 제거한다.
@@ -149,17 +149,20 @@ static struct frame *vm_evict_frame(void)
 static struct frame *vm_get_frame(void)
 {
 	// frame 구조체를 생성한다
+	void *kva = palloc_get_page(PAL_USER | PAL_ZERO);
+	if (kva == NULL)
+		return vm_evict_frame();
+
 	struct frame *frame = malloc(sizeof(*frame));
 	if (frame == NULL)
 		PANIC("(vm_get_frame)");
 
 	*frame = (struct frame){
 		.page = NULL,
-		.kva = palloc_get_page(PAL_USER | PAL_ZERO) // 사용자풀에서 물리 페이지 할당받는다
+		.kva = kva // 사용자풀에서 물리 페이지 할당받는다
 	};
 
-	if (frame->kva == NULL)
-		PANIC("(vm_get_frame) TODO: swap out 미구현");
+	list_push_back(&frame_list, &frame->elem);
 
 	ASSERT(frame->page == NULL);
 	return frame;
