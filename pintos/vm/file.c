@@ -73,6 +73,7 @@ static bool file_backed_swap_out(struct page *page)
 		palloc_free_page(page->frame->kva);
 
 		// frame 구조체 해제
+		list_remove(&page->frame->elem);
 		free(page->frame);
 		page->frame = NULL;
 	}
