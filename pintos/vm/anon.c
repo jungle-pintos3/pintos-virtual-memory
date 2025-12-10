@@ -143,6 +143,20 @@ static void anon_destroy(struct page *page)
 
 	// 프레임 할당되어 있으면 해제한다
 	if (page->frame != NULL) {
+		printf("DEBUG: [anon_destroy] page:%p, va:%p, frame:%p\n", page, page->va, page->frame);
+
+		if (NULL == page->frame->kva) {
+			printf("DEBUG: [CRITICAL] frame->kva is NULL! Cannot free.\n");
+		} else {
+			printf("DEBUG: frame->kva:%p, offset:%d\n", page->frame->kva,
+				   (int)pg_ofs(page->frame->kva));
+
+			// 미리 검사해서 패닉 대신 경고를 띄워 봅니다 (선택사항)
+			if (pg_ofs(page->frame->kva) != 0) {
+				printf("DEBUG: [CRITICAL] kva is NOT aligned! palloc_free will fail.\n");
+			}
+		}
+
 		// pte에서 매핑 제거
 		pml4_clear_page(thread_current()->pml4, page->va);
 
